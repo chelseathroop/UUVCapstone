@@ -1409,15 +1409,21 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <class number="0" name="default" width="0" drill="0">
 </class>
 </classes>
-<designrules name="epl-lpkf *">
-<description language="en">&lt;b&gt;EAGLE Design Rules for PSU Electronics Prototyping Lab&lt;/b&gt;
+<designrules name="LaenPCBOrder">
+<description language="de">&lt;b&gt;EAGLE Design Rules&lt;/b&gt;
 &lt;p&gt;
-2013-03-03: Modified from  &lt;b&gt;sunstone_quickturn.dru&lt;/b&gt; to meet minimum drills and spacing for the LPKF S63 Circuit Board Router.
-&lt;/p&gt;</description>
+Die Standard-Design-Rules sind so gewählt, dass sie für 
+die meisten Anwendungen passen. Sollte ihre Platine 
+besondere Anforderungen haben, treffen Sie die erforderlichen
+Einstellungen hier und speichern die Design Rules unter 
+einem neuen Namen ab.</description>
+<description language="en">&lt;b&gt;Laen's PCB Order Design Rules&lt;/b&gt;
+&lt;p&gt;
+Please make sure your boards conform to these design rules.</description>
 <param name="layerSetup" value="(1*16)"/>
-<param name="mtCopper" value="0.0178mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0178mm"/>
-<param name="mtIsolate" value="59mil 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm"/>
-<param name="mdWireWire" value="0.34798125mm"/>
+<param name="mtCopper" value="0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm 0.0356mm"/>
+<param name="mtIsolate" value="1.5011mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm 0.1499mm 0.2007mm"/>
+<param name="mdWireWire" value="6mil"/>
 <param name="mdWirePad" value="6mil"/>
 <param name="mdWireVia" value="6mil"/>
 <param name="mdPadPad" value="6mil"/>
@@ -1429,11 +1435,11 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <param name="mdViaViaSameLayer" value="8mil"/>
 <param name="mnLayersViaInSmd" value="2"/>
 <param name="mdCopperDimension" value="15mil"/>
-<param name="mdDrill" value="15mil"/>
+<param name="mdDrill" value="6mil"/>
 <param name="mdSmdStop" value="0mil"/>
-<param name="msWidth" value="8mil"/>
-<param name="msDrill" value="0.35mm"/>
-<param name="msMicroVia" value="9.9898mm"/>
+<param name="msWidth" value="6mil"/>
+<param name="msDrill" value="13mil"/>
+<param name="msMicroVia" value="13mil"/>
 <param name="msBlindViaRatio" value="0.5"/>
 <param name="rvPadTop" value="0.25"/>
 <param name="rvPadInner" value="0.25"/>
@@ -1442,20 +1448,20 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <param name="rvViaInner" value="0.25"/>
 <param name="rvMicroViaOuter" value="0.25"/>
 <param name="rvMicroViaInner" value="0.25"/>
-<param name="rlMinPadTop" value="8mil"/>
-<param name="rlMaxPadTop" value="999mil"/>
-<param name="rlMinPadInner" value="0mil"/>
-<param name="rlMaxPadInner" value="0mil"/>
-<param name="rlMinPadBottom" value="8mil"/>
-<param name="rlMaxPadBottom" value="999mil"/>
-<param name="rlMinViaOuter" value="8mil"/>
-<param name="rlMaxViaOuter" value="999mil"/>
-<param name="rlMinViaInner" value="0mil"/>
-<param name="rlMaxViaInner" value="0mil"/>
-<param name="rlMinMicroViaOuter" value="8mil"/>
-<param name="rlMaxMicroViaOuter" value="999mil"/>
-<param name="rlMinMicroViaInner" value="0mil"/>
-<param name="rlMaxMicroViaInner" value="0mil"/>
+<param name="rlMinPadTop" value="7mil"/>
+<param name="rlMaxPadTop" value="20mil"/>
+<param name="rlMinPadInner" value="7mil"/>
+<param name="rlMaxPadInner" value="20mil"/>
+<param name="rlMinPadBottom" value="7mil"/>
+<param name="rlMaxPadBottom" value="20mil"/>
+<param name="rlMinViaOuter" value="7mil"/>
+<param name="rlMaxViaOuter" value="20mil"/>
+<param name="rlMinViaInner" value="7mil"/>
+<param name="rlMaxViaInner" value="20mil"/>
+<param name="rlMinMicroViaOuter" value="4mil"/>
+<param name="rlMaxMicroViaOuter" value="20mil"/>
+<param name="rlMinMicroViaInner" value="4mil"/>
+<param name="rlMaxMicroViaInner" value="20mil"/>
 <param name="psTop" value="-1"/>
 <param name="psBottom" value="-1"/>
 <param name="psFirst" value="-1"/>
@@ -1480,7 +1486,7 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <param name="checkFont" value="1"/>
 <param name="checkRestrict" value="1"/>
 <param name="useDiameter" value="13"/>
-<param name="maxErrors" value="500"/>
+<param name="maxErrors" value="50"/>
 </designrules>
 <autorouter>
 <pass name="Default">
@@ -1927,8 +1933,8 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <wire x1="27.94" y1="17.145" x2="27.94" y2="13.335" width="0.3048" layer="1"/>
 <contactref element="TP7" pad="TP"/>
 <wire x1="27.94" y1="13.335" x2="27.94" y2="7.62" width="0.6096" layer="1"/>
-<wire x1="33.274" y1="23.114" x2="33.835" y2="23.95" width="0.254" layer="1"/>
-<wire x1="33.835" y1="23.95" x2="34.46" y2="26.41" width="0.254" layer="1"/>
+<wire x1="33.274" y1="23.114" x2="34.4065" y2="25.728" width="0.254" layer="1"/>
+<wire x1="34.4065" y1="25.728" x2="34.46" y2="26.41" width="0.254" layer="1"/>
 </signal>
 <signal name="CMD">
 <contactref element="U$1" pad="CMD"/>
@@ -1957,8 +1963,8 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <wire x1="37.846" y1="21.463" x2="38.1" y2="13.335" width="0.3048" layer="1"/>
 <contactref element="TP6" pad="TP"/>
 <wire x1="38.1" y1="13.335" x2="38.1" y2="7.62" width="0.6096" layer="1"/>
-<wire x1="37.338" y1="22.86" x2="37.222" y2="23.143" width="0.254" layer="1"/>
-<wire x1="37.222" y1="23.143" x2="36.46" y2="26.41" width="0.254" layer="1"/>
+<wire x1="37.338" y1="22.86" x2="36.46" y2="25.81" width="0.254" layer="1"/>
+<wire x1="36.46" y1="25.81" x2="36.46" y2="26.41" width="0.254" layer="1"/>
 </signal>
 <signal name="DAT0">
 <contactref element="U$1" pad="DAT[0]"/>
@@ -1967,8 +1973,8 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <wire x1="40.64" y1="19.939" x2="40.64" y2="13.335" width="0.3048" layer="1"/>
 <contactref element="TP3" pad="TP"/>
 <wire x1="40.64" y1="13.335" x2="40.64" y2="4.445" width="0.6096" layer="1"/>
-<wire x1="38.227" y1="23.749" x2="37.595" y2="24.922" width="0.254" layer="1"/>
-<wire x1="37.595" y1="24.922" x2="36.96" y2="26.41" width="0.254" layer="1"/>
+<wire x1="38.227" y1="23.749" x2="37.0235" y2="25.811" width="0.254" layer="1"/>
+<wire x1="37.0235" y1="25.811" x2="36.96" y2="26.41" width="0.254" layer="1"/>
 </signal>
 <signal name="DAT1">
 <contactref element="U$1" pad="DAT[1]"/>
@@ -1982,12 +1988,16 @@ for trimmer refence see : &lt;u&gt;www.electrospec-inc.com/cross_references/trim
 <signal name="S">
 <contactref element="U$1" pad="S"/>
 <contactref element="JP1" pad="12"/>
-<wire x1="39.37" y1="26.924" x2="50.8" y2="15.875" width="0.3048" layer="1"/>
-<wire x1="50.8" y1="15.875" x2="50.8" y2="13.335" width="0.3048" layer="1"/>
 <contactref element="TP11" pad="TP"/>
 <wire x1="50.8" y1="13.335" x2="50.8" y2="4.445" width="0.6096" layer="1"/>
 <wire x1="39.37" y1="26.924" x2="39.093" y2="27.079" width="0.254" layer="1"/>
 <wire x1="39.093" y1="27.079" x2="38.06" y2="27.46" width="0.254" layer="1"/>
+<wire x1="39.37" y1="26.924" x2="40.64" y2="25.4" width="0.254" layer="1"/>
+<wire x1="40.64" y1="25.4" x2="45.72" y2="22.86" width="0.3048" layer="1"/>
+<via x="45.72" y="22.86" extent="1-16" drill="0.6" shape="square"/>
+<wire x1="45.72" y1="22.86" x2="50.8" y2="22.86" width="0.3048" layer="16"/>
+<via x="50.8" y="22.86" extent="1-16" drill="0.6" shape="square"/>
+<wire x1="50.8" y1="22.86" x2="50.8" y2="13.335" width="0.3048" layer="1"/>
 </signal>
 <signal name="VSS">
 <contactref element="JP1" pad="11"/>
