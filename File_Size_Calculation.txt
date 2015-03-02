@@ -1,0 +1,18 @@
+// Using 16 bit per sample we get 16*44*2^10 bits per second or 2*44*2^10 bytes/second.
+// So a 32G Byte storage can record for –>  (32*2^30)/(88*2^10) =  381300 seconds =  105.9 hours.
+// In general for S kilo-sample per second - we have 16*S*1000/8 = 2*S*1000 bytes per second
+// For 1K sampling rate file size is = 2*1*1000 = 2000 bytes
+// 32GB = 32*2^30 bytes. So, storage capacity in terms of times is - 32*2^30/(2*S*1000) = (4772.1858/S) hours.
+#define START_HOUR      A3              // 23 -> 1010 0011  Alarm Enable, dontcare, 2 BCD tens digit, 4BCD unit place
+#define START_DAY       A6              // 26 -> 1010 0110 Alarm Enable, dontcare, 2 BCD tens digit, 4BCD unit place
+#define WAKE_INTERVAL   3               // 3
+#define SLEEP_INTERVAL  2               // 2
+#define SAMPLE_RATE     48              // 48K
+#define RECORD_INTERVAL 30              // 30 minutes in one file
+#define FILE_SIZE_1K    2000            // 2000 bytes per second for 1k sampling rate
+ 
+void File_size_calc ()
+{
+   File_Size = FILE_SIZE_1K * SAMPLE_RATE * RECORD_INTERVAL * 60;
+ 
+}
