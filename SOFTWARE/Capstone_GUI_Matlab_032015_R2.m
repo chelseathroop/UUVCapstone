@@ -75,7 +75,7 @@ handles.output = hObject;
 
 
 guidata(hObject, handles);
-%%
+%%Capstone_GUI_Matlab_032015_R1
 % --- Executes on button press in Load.
 function Load_Callback(hObject, eventdata, handles)
 
