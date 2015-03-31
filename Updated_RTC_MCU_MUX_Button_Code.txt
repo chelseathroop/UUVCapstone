@@ -1,0 +1,404 @@
+/*
+ * RTC_TEST.c
+ *
+ * Created: 2/14/2015 7:06:57 PM
+ *  Author: saida
+ */ 
+
+
+ 
+/*ECE 412
+Winter 2015
+TASCAM-Sea Glider project
+ 
+Define all Variables
+Start_time: day, hour
+Wake duration
+Sleep duration
+Sampling Rate
+ 
+Power-on-MCU
+After coming out of RESET run  RTC intialize routine ¿ (code done)
+Compute  file size  for each  record interval (Within one Wake duration we may have more than one record interval, each record interval is the time between record start-stop/save) (code done)
+Initialize RTC for 1st wake alarm/interrupt ¿ (code done)
+Set wake/sleep indicator bit in a registor as sleep (0=sleep, 1=wake)
+Set record_count = 0
+Set curr_hour = 1st start_hour
+Connect RTC INT bit to MCU¿s INT0 pin. Configure to enable and receive INTURRUPT in INT0 from RTC ¿ (working on this code)
+ 
+After receiving  alarm/interrupt do the following :
+ 
+Check wake/sleep bit to determine what state it was.
+If state was sleep then the alarm was to wake  so call/jump to wake routine
+Else call/jump to sleep routine
+In Wake routine do the followings -
+Flip the wake/sleep bit to indicate wake state.
+Turn on TASCAM.
+Set new cur_hour (curr_hour = mod((curre_hour + Sleep duration), 24) //it slept for sleep duration since the last curr_hour)
+Set RTC to configure for sleep reminder alarm. (code done)
+Wait for TASCAM to come out of RESET and become ready to record (need signal/indicator to detect TASCAM readiness.
+Compute  used disk space  based on number of record_counts and file_size per record interval. (Code done)
+If disk space is less than 32GB but more than (32GB ¿ file size) 
+then   increment SD card select count and switch to next SD card and set record_count to zero.
+if SD card select count is > 3 then it means we filled all four cards. Quit mission, turn off TASCAM, RTC, MCU and wait for the DIVER to pick you up to the shore.
+viii.         Assert record button and set timer with record interval.
+ix.           Wait for timer to trigger or RTC to send sleep alarm.
+x.            If timer triggered or alarm received then Increment record_count, stop record, save file 
+xi.           If timer triggered then and go to substep vi.
+xii.          If alarm from RTC then turnoff TASCAM, jump to Sleep routine
+11.         In sleep routine 
+set wake/sleep bit to sleep.
+Set new cur_hour (curr_hour = mod((curre_hour + wake_duration), 24) //it remained wake for wake duration since the last curr_hour)
+Set RTC to configure for wake reminder alarm. (code done)
+Set PC(Program Counter) to step7.
+Go to powerdown mode (working on this routine)
+ 
+ */
+ 
+#define F_CPU 8000000UL // 1MHz internal clock speed of ATmega328
+#define SLEEP1  0
+#define WAKE   1
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <util/twi.h>
+#include <stdbool.h>
+#include <avr/eeprom.h>
+#include <stdint.h>
+#include <avr/sleep.h>
+#include <avr/power.h>
+ 
+ 
+#include "time.h"
+#include "TWI_Master.h"
+#include "RTC_TEST.h"
+ 
+unsigned char Previous_Read = 0x07; //variable to hold encoder status
+unsigned char Current_Read  = 0x00;
+ 
+ 
+ 
+ 
+volatile bool RTC_INTR_DETECTED = false;
+volatile int Input_Index = 0;
+volatile int Input_Index_2 = 0;
+volatile int Combiantion_Match_counter = 0;
+volatile bool Continue_Match_Check =true;
+volatile bool No_Press_Flag = false;
+volatile char Button_Held = 0x00;
+volatile bool New_Passcode_Entry = true;
+volatile bool Time_Out_Flag=false;
+ 
+// function prototype
+int File_size_calc (int, int);
+void Select_SD_Card (int );
+ 
+/*interrupt routine to handle RTC sleep/wake interrupt. We selected INT0 for this interrupt. In this interrupt
+function the user input will be enable and the timer interrupt will also be enabled.*/
+// toggles arbitrary LED on and off for debug
+ISR(INT0_vect)
+{
+              
+               EIMSK &= ~(1<<INT0);                    //disable interrupt on INT0
+               EIFR  &= ~(1<<INTF0);     //clear INT0 interrupt flag
+              
+               RTC_INTR_DETECTED=true;         // enable User input from NES controller
+                             
+}
+ 
+ 
+int main(void)
+{
+ 
+   //Setting PC3 as output for TASCAM ON and OFF
+    DDRC |= (1<<DDC3);
+              
+   //Setting PC2 as output for TASCAM Recording
+    DDRC |= (1<<DDC2);
+                
+   //Setting PB1 and PB2 as output for selecting SD CARD
+    DDRB |= ((1<<DDB1)|(1<<DDB2)); 
+             
+ 
+                
+    int max_record_cnt_this_interval;
+    unsigned int remaining_disk_space;
+    unsigned long int j = 1073741824;
+    int File_size;
+ 
+    int oldday, oldhour, current_record_cnt, total_record_hour;
+ 
+    int sd_card_no = 0;
+    int junk  = 19;
+    int  i, DAYS[100], HOURS[100] ;
+    int index = 0;
+              
+    RTC_Initialize_Time_Date();
+    RTC_Set_CTL_Registers();
+/*
+   FILE *fptr;
+   char str[600];
+ 
+  
+   while(fgets(line, 100, fptr) != NULL)
+   {
+               // get a line, up to 80 chars from fptr.  done if NULL
+               sscanf (line, "%d", &day_no);
+                              while(sscanf (line, "%d", &hour_no) != 1)
+                              {
+                                             DAYS[i] = &day_no;
+                                             HOURS[i++] = &hour_no;
+                              }
+               // convert the string to a long int
+               //printf ("%d\n", elapsed_seconds);
+               //puts(str);
+   }
+ 
+               fclose(fptr);
+ 
+ 
+ 
+*/
+/*
+As I mentioned in a comment, the %s specifier reads until whitespace or the end of data. So if you want to read a string token that's delimited by a ';' character, you'll need to use something else. Fortunately, there's the %[ specifier which lets you provide a set of characters to accept or - more often useful - a set of characters to stop the match.
+ 
+Try the following:
+ 
+sscanf(temp, "%s %[^;]; %d %d %d %d", id, name, &i1, &i2, &i3, &i4);
+*/
+     DAYS[0] = 26;
+     HOURS[0] = 1;
+     int SAMPLE_RATE = 48;
+     int RECORD_INTERVAL = 15;
+     for(i=1; i<100; i++)
+     {
+          HOURS[i] = (HOURS[i-1]+5)%24;
+          if(HOURS[i] < HOURS[i-1])
+          {
+             DAYS[i] = DAYS[i-1] + 1;
+          }
+          else
+          {
+             DAYS[i] = DAYS[i-1];
+          }
+      }
+ 
+      //configuring interrupt INT0
+      DDRD &= ~(1<<DDD2);   //PD2 as input
+      PORTD |= (1<<PORTD2); //enable pull-up on PD2
+      EICRA &= ~(1<<ISC00); // set interrupt on INT0 as level sensitive. Sets the bit to 0
+      EICRA &= ~(1<<ISC01); // setting both ISC00/ISC01 to zero configures INT0
+                            // as a level sensitive interrupt and triggers interrupt when INT0 bit is low.
+ 
+      EIMSK |= (1<<INT0);        // enable interrupt on INT0, sets the bit to 1
+      sei();                     // enable global interrupts
+      //   _CLI();               // Disable interrupt
+ 
+      // SM2,SM1,SM0 = 101 is power-down mode, one time setting
+      SMCR &= ~ (1<<SM0);   // set this bit to 0
+      SMCR |=   (1<<SM1);   // set this bit to 1
+      SMCR &= ~ (1<<SM2);   // set this bit to 0
+  
+      SMCR |=   (1<<SE);           // set this bit to 1 to enable sleep mode
+                                   // set this bit right before entering sleep mode
+      SMCR &= ~ (1<<SE);           // clear this bit to 0 to disable sleep mode
+                                   // clear this bit after coming out of sleep to avoid accidental sleep
+      int record_count = 0;
+      File_size = File_size_calc (SAMPLE_RATE, RECORD_INTERVAL);
+ 
+      // alternate way to enable interrupt __enable_interrupt(); /* set Global Interrupt Enable */
+      // __sleep(); /* enter sleep, waiting for interrupt */
+      /* note: will enter sleep before any pending interrupt(s) */
+              
+      int current_state = SLEEP1;           // MCU is now sleeping, remember sleep/wake status
+      int day = 0;
+      int hour = 0;
+      int minute;
+      day      = DAYS[0];
+      hour     = HOURS[0];
+      minute   = 0;
+      RTC_Set_ALARM_Registers(day, hour, minute, current_state);
+      sleep_mode();
+      Select_SD_Card(sd_card_no);      // Selects one of the four the SD card
+                                       // The two gpio pin is assigned to connect to two mux select bit.
+                                       // Since sd_card_no is initially zero it will set both
+                                       // mux select bit to 0 and hence sd_card 0 will be selected.
+       //main program loop
+       while(1)
+       {
+          /*in this infinite loop the MCU is waiting for a interrupt. the interrupt is
+          triggered when the user presses the START button.*/
+          junk = junk + 1;
+          junk--;
+          while (RTC_INTR_DETECTED)
+          {
+               index++;
+               RTC_INTR_DETECTED = false;
+               EIMSK |= (1<<INT0);                       //Enable interrupt on INT0 for next interrupt.
+               oldday    = day;
+               oldhour   = hour;
+               day       = DAYS[index];
+               hour      = HOURS[index];
+               //  next_hour = HOURS[index+1];
+               minute    = 0;
+               if(current_state)
+               {
+                   current_state = SLEEP1;  // Part was wake, now it will go to sleep.
+                   minute        = 0;
+                   RTC_Set_ALARM_Registers(day, hour, minute, current_state); // Set RTC to send reminder to wakeup
+                   SMCR |=   (1<<SE);       // set this bit to 1 to enable sleep mode
+                                                                                                         // set this bit right before entering sleep mode
+                   sleep_mode();
+                   junk = junk + 1;
+                   junk--;
+               
+                 }
+                 else
+                 {
+                    current_state = WAKE;          // Part was sleep, this interrupt woke it up.
+                                                   //****** TURN_TASCAM_ON = 1;                            // Set the gpio bit to turn on TASCAM;
+                    PORTC |= (1<<PORTC3);
+                                                           
+                    SMCR &= ~ (1<<SE);             // clear this bit to 0 to disable sleep mode
+                                                                                                         // clear this bit after coming out of sleep to avoid accidental sleep
+                    minute = RECORD_INTERVAL;
+                    if(hour > oldhour)
+                    {
+                        total_record_hour = hour - oldhour;
+                    }
+                    else
+					{
+                        total_record_hour = hour + 24 - oldhour;
+                    }
+                    max_record_cnt_this_interval = (total_record_hour * 60)/RECORD_INTERVAL;
+                    current_record_cnt = 0;
+                    minute        = RECORD_INTERVAL;                   // After wakeup this is the 1st recording.
+                    hour          = oldhour;                           // So, next int0 expected is after RECORD_INTERVAL minutes.
+                    day           = oldday;
+                    RTC_Set_ALARM_Registers(day, hour, minute, current_state);  // Set RTC to send reminder to stop and save recording
+ 
+                 /* while(~TASCAM_READY)   // **** Did TASCAM got out of reset and ready to record?
+                    {
+                         _no_operation();
+                    }*/
+               }
+               while (~RTC_INTR_DETECTED)
+               {
+                   //remaining_disk_space = 32 * (2^30) - File_size * record_count;
+                   remaining_disk_space = (32 * j) - File_size * record_count;
+                   if(remaining_disk_space < File_size)
+                   {
+                       sd_card_no++;
+                       if(sd_card_no > 3)
+                       {
+                          // ****** TURN_TASCAM_ON = 0;                                 // Clear the gpio bit to turn off TASCAM;
+                          PORTC &= ~(1<<PORTC3);
+                                                                               
+                          day = day - 1;
+                          RTC_Set_ALARM_Registers(day, hour, minute, current_state);   // Set RTC to send interrupt after 1 month
+                          SMCR |=   (1<<SE);                                           // set this bit to 1 to enable sleep mode
+                                                                                                                                                                     // set this bit right before entering sleep mode
+                          sleep_mode(); 
+ 
+                       }
+                       else
+                       {
+                              Select_SD_Card(sd_card_no);      // Selects one of the four the SD card
+                                                               // The two gpio pin is assigned to connect to two mux select bit.
+                                                               // Since sd_card_no is increased we need to update the corresponding
+                                                               // gpio pin to change the mux select bit to select the next card.
+                                                                                         
+                       }
+ 
+ 
+                  }
+                  else
+                  {
+                       // ************** SET_TASCAM_RECORD = 1;    // use the gpio bit to start recording
+                       PORTC |= (1<<PORTC2);
+                                                                          
+                       // set_mcu_timer to trigger after record_time_interval;
+                       while(~RTC_INTR_DETECTED)
+                       {
+                            _no_operation();
+                       }
+                       // **************SET_TASCAM_RECORD = 0;  // use gpio pin to stop recording
+                       PORTC &= ~(1<<PORTC2);
+                                                                          
+                       // **************SET_TASCAM_SAVE = 1;    // use gpio bit to save the recorded data
+                       record_count++;
+                       current_record_cnt++;
+                       if(current_record_cnt < max_record_cnt_this_interval)
+                       {
+                            RTC_INTR_DETECTED = FALSE;
+                            EIMSK |= (1<<INT0);                // INT0 was disabled in the interrupt routine. We Enable it for next interrupt.
+							
+                            if((minute + RECORD_INTERVAL)>=60)
+                            {
+                                hour    = hour + 1;
+                                minute  = (minute + RECORD_INTERVAL)%60;
+                                if(hour>=24)
+								{
+                                   day  = day + 1;
+                                   hour = hour%24;
+                                }
+                            }
+                            else
+                            {
+                                 minute = (minute + RECORD_INTERVAL);
+                            }
+                            RTC_Set_ALARM_Registers(day, hour, minute, current_state); // Set RTC to send reminder to go to sleep
+                        }
+                    }
+                } // End inner while (~RTC_INTR_DETECTED)
+            } // End while (RTC_INTR_DETECTED)
+              
+        } // end while(1)
+		
+        return 0;
+}
+ 
+ 
+// Using 16 bit per sample we get 16*44*2^10 bits per second or 2*44*2^10 bytes/second.
+// So a 32G Byte storage can record for ¿>  (32*2^30)/(88*2^10) =  381300 seconds =  105.9 hours.
+// In general fo S kilo-sample per second - we have 16*S*1000/8 = 2*S*1000 bytes per second
+// For 1K sampling rate file size is = 2*1*1000 = 2000 bytes
+// 32GB = 32*2^30 bytes. So, storage capacity in terms of times is - 32*2^30/(2*S*1000) = (4772.1858/S) hours.
+//
+int File_size_calc (int SAMPLE_RATE, int RECORD_INTERVAL)
+{
+  
+   // File_Size = FILE_SIZE_1K * SAMPLE_RATE * RECORD_INTERVAL * 60;
+   int FILE_SIZE_1K;
+  
+   FILE_SIZE_1K = 2000;
+   return(FILE_SIZE_1K * SAMPLE_RATE * RECORD_INTERVAL * 60);
+ 
+ 
+}
+ 
+void Select_SD_Card (int sdcard_no)
+{
+               if(sdcard_no == 0)
+               {
+                       PORTB &= ~(1<<PORTB1);
+                       PORTB &= ~(1<<PORTB2);
+               }
+               if(sdcard_no == 1)
+               {
+                       PORTB |= (1<<PORTB1);
+                       PORTB &= ~(1<<PORTB2);
+               }
+               if(sdcard_no == 2)
+               {
+                       PORTB &= ~(1<<PORTB1);
+                       PORTB |= (1<<PORTB2);
+               }
+               if(sdcard_no == 3)
+               {
+                       PORTB |= (1<<PORTB1);
+                       PORTB |= (1<<PORTB2);
+               }
+ 
+}
+ 
