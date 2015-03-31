@@ -1,0 +1,276 @@
+/*
+ECE 412 
+Winter 2015
+TASCAM-Sea Glider project
+
+Define all Variables –
+Start_time: day, hour
+Wake duration
+Sleep duration
+Sampling Rate
+
+Power-on-MCU
+After coming out of RESET run  RTC intialize routine – (code done)
+Compute  file size  for each  record interval (Within one Wake duration we may have more than one record interval, each record interval is the time between record start-stop/save) (code done)
+Initialize RTC for 1st wake alarm/interrupt – (code done)
+Set wake/sleep indicator bit in a registor as sleep (0=sleep, 1=wake)
+Set record_count = 0 
+Set curr_hour = 1st start_hour
+Connect RTC INT bit to MCU’s INT0 pin. Configure to enable and receive INTURRUPT in INT0 from RTC – (working on this code)
+
+9.	After receiving  alarm/interrupt do the following :
+
+Check wake/sleep bit to determine what state it was.
+If state was sleep then the alarm was to wake – so call/jump to wake routine
+Else call/jump to sleep routine
+10.	In Wake routine do the followings - 
+Flip the wake/sleep bit to indicate wake state.
+Turn on TASCAM.
+Set new cur_hour (curr_hour = mod((curre_hour + Sleep duration), 24) //it slept for sleep duration since the last curr_hour)
+Set RTC to configure for sleep reminder alarm. (code done)
+Wait for TASCAM to come out of RESET and become ready to record (need signal/indicator to detect TASCAM readiness.
+Compute  used disk space  based on number of record_counts and file_size per record interval. (Code done)
+If disk space is less than 32GB but more than (32GB – file size)  
+then   increment SD card select count and switch to next SD card and set record_count to zero.
+if SD card select count is > 3 then it means we filled all four cards. Quit mission, turn off TASCAM, RTC, MCU and wait for the DIVER to pick you up to the shore.
+viii.	Assert record button and set timer with record interval.
+ix.	Wait for timer to trigger or RTC to send sleep alarm.
+x.	If timer triggered or alarm received then Increment record_count, stop record, save file  
+xi.	If timer triggered then and go to substep vi.
+xii.	If alarm from RTC – then turnoff TASCAM, jump to Sleep routine
+11.	In sleep routine – 
+set wake/sleep bit to sleep.
+Set new cur_hour (curr_hour = mod((curre_hour + wake_duration), 24) //it remained wake for wake duration since the last curr_hour)
+Set RTC to configure for wake reminder alarm. (code done)
+Set PC(Program Counter) to step7.
+Go to powerdown mode – (working on this routine)
+
+ 
+ */ 
+
+#define F_CPU 8000000UL // 1MHz internal clock speed of ATmega328
+#define SLEEP = 0
+#define WAKE  = 1
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <util/twi.h>
+#include <stdbool.h>
+#include <avr/eeprom.h>
+#include <stdint.h>
+#include <time.h>
+
+
+#include "TWI_Master.h"
+#include "rtc_routine.h"
+
+unsigned char Previous_Read = 0x07; //variable to hold encoder status
+unsigned char Current_Read  = 0x00;
+
+
+int  Confidence_Level = 0;
+volatile bool RTC_INTR_DETECTED = false;
+volatile int Input_Index = 0;
+volatile int Input_Index_2 = 0;
+volatile int Combiantion_Match_counter = 0;
+volatile bool Continue_Match_Check =true;
+volatile bool No_Press_Flag = false;
+volatile char Button_Held = 0x00;
+volatile bool New_Passcode_Entry = true;
+volatile bool Time_Out_Flag=false;
+
+
+/*interrupt routine to handle RTC sleep/wake interrupt. We selected INT0 for this interrupt. In this interrupt
+function the user input will be enable and the timer interrupt will also be enabled.*/
+// toggles arbitrary LED on and off for debug
+ISR(INT0_vect)
+{
+	
+	EIMSK &= ~(1<<INT0); 		//disable interrupt on INT0
+	EIFR  &= ~(1<<INTF0); 	//clear INT0 interrupt flag
+	
+	RTC_INTR_DETECTED=true; 	// enable User input from NES controller
+		
+}
+
+
+int main(void)
+{
+
+int current_state, i;
+int record_count, DAYS[100], HOURS[100] ;
+
+	RTC_Initialize_Time_Date();
+	RTC_Set_CTL_Registers();
+
+	DAYS[0] = 26;
+	HOURS[0] = 1;
+	for(i=1; i<100; i++)
+	{
+		HOURS[i] = (HOURS[i-1]+5)%24;
+		if(HOURS[i] < HOURS[i-1])
+		{
+			DAYS[i] = DAYS[i-1] + 1;
+		}
+		else
+		{
+			DAYS[i] = DAYS[i-1];
+		}
+	}
+
+//configuring interrupt INT0
+	EICRA &= ~(1<<ISC00); // set interrupt on INT0 as level sensitive. Sets the bit to 0
+	EICRA &= ~(1<<ISC01); // setting both ISC00/ISC01 to zero configures INT0 
+					// as a level sensitive interrupt and triggers interrupt when INT0 bit is low.
+
+	EIMSK |= (1<<INT0); 	// enable interrupt on INT0, sets the bit to 1
+	sei(); 			// enable global interrupts
+//   _CLI();               // Disable interrupt 
+
+// SM2,SM1,SM0 = 101 is power-down mode, one time setting
+	SMCR &= ~ (1<<SM0);   // set this bit to 0
+	SMCR |=   (1<<SM1);   // set this bit to 1
+	SMCR &= ~ (1<<SM2);   // set this bit to 0
+
+
+	SMCR |=   (1<<SE);   	// set this bit to 1 to enable sleep mode
+                     		// set this bit right before entering sleep mode
+	SMCR &= ~ (1<<SE);   	// clear this bit to 0 to disable sleep mode
+                     		// clear this bit after coming out of sleep to avoid accidental sleep
+	record_count = 0;
+	File_size = File_size_calc (SAMPLE_RATE, RECORD_INTERVAL)
+
+	// alternate way to enable interrupt __enable_interrupt(); /* set Global Interrupt Enable */
+	// __sleep(); /* enter sleep, waiting for interrupt */
+	/* note: will enter sleep before any pending interrupt(s) */
+	
+	current_state = SLEEP;  	// MCU is now sleeping, remember sleep/wake status
+	RTC_Set_ALARM_Registers();
+	__sleep(); 
+	
+	//main program loop
+	while(1)
+	{
+		/*in this infinite loop the MCU is waiting for a interrupt. the interrupt is 
+		 triggered when the user presses the START button.*/
+		
+		while (RTC_INTR_DETECTED)
+		{
+			index++;
+			RTC_INTR_DETECTED = false;
+			EIMSK |= (1<<INT0); 		//Enable interrupt on INT0
+			day  = DAYS[index];
+			hour = HOURS[index];
+			next_hour = HOURS[index+1];
+			if(current_state) 
+			{
+				current_state = SLEEP;	// Part was wake, now it will go to sleep.
+				RTC_Set_ALARM_Registers(day, hour, minute, current_state); // Set RTC to send reminder to wakeup
+				SMCR |=   (1<<SE);   		// set this bit to 1 to enable sleep mode
+                     						// set this bit right before entering sleep mode
+				__sleep();  
+			}
+			else 
+			{
+				current_state = WAKE;		// Part was sleep, this interrupt woke it up.
+				TURN_TASCAM_ON = 1; 		// Set the gpio bit to turn on TASCAM;
+				SMCR &= ~ (1<<SE);   		// clear this bit to 0 to disable sleep mode
+                     						// clear this bit after coming out of sleep to avoid accidental sleep
+				minute = RECORD_INTERVAL;
+				if(next_hour > hour)
+				{
+					total_record_hour = next_hour - hour;
+				}
+				else {
+					total_record_hour = next_hour + 24 - hour;
+				}
+				max_record_cnt_this_interval = (total_record_hour * 60)/RECORD_INTERVAL;
+				current_record_cnt = 0;
+				RTC_Set_ALARM_Registers(day, hour, minute); // Set RTC to send reminder to go to sleep
+
+				while(~TASCAM_READY)
+				{
+					nop;
+				}
+			}
+
+
+			while (~RTC_INTR_DETECTED)
+			{
+				remaining_disk_space = 32 * 2^30 - File_size * record_count;
+				if(remaining_disk_space < File_size)
+				{
+					sd_card_no++;
+					if(sd_card_no > 3)
+					{
+						TURN_TASCAM_ON = 0; 				// Clear the gpio bit to turn off TASCAM;
+						day = day - 1;
+						RTC_Set_ALARM_Registers(day, hour); 	// Set RTC to send interrupt after 1 month
+						SMCR |=   (1<<SE);   				// set this bit to 1 to enable sleep mode
+                     										// set this bit right before entering sleep mode
+						__sleep();  
+
+					}
+					else
+					{
+						//set gpio bits to select next sd card.
+					}
+
+
+				}
+				else 
+				{
+					SET_TASCAM_RECORD = 1;
+						// set_mcu_timer to trigger after record_time_interval;
+					while(~RTC_INTR_DETECTED)
+					{
+						nop;
+					}
+					SET_TASCAM_RECORD = 0;
+					SET_TASCAM_SAVE = 1;
+					record_count++;
+					current_record_cnt++;
+					if(current_record_cnt < max_record_cnt_this_interval)
+					{
+						RTC_INTR_DETECTED = FALSE;
+						EIMSK |= (1<<INT0); // Enable interrupt on INT0
+						minute = (minute + RECORD_INTERVAL)%60;
+						RTC_Set_ALARM_Registers(day, hour, minute, current_state); // Set RTC to send reminder to go to sleep
+					}
+
+				}
+			} // End inner while (~RTC_INTR_DETECTED)
+		} // End while (RTC_INTR_DETECTED)
+	
+	} // end while(1)
+	return 0;
+}
+
+
+// Using 16 bit per sample we get 16*44*2^10 bits per second or 2*44*2^10 bytes/second.
+// So a 32G Byte storage can record for –>  (32*2^30)/(88*2^10) =  381300 seconds =  105.9 hours.
+// In general fo S kilo-sample per second - we have 16*S*1000/8 = 2*S*1000 bytes per second
+// For 1K sampling rate file size is = 2*1*1000 = 2000 bytes
+// 32GB = 32*2^30 bytes. So, storage capacity in terms of times is - 32*2^30/(2*S*1000) = (4772.1858/S) hours.
+//
+void File_size_calc (int SAMPLE_RATE, int RECORD_INTERVAL)
+{
+   
+   // File_Size = FILE_SIZE_1K * SAMPLE_RATE * RECORD_INTERVAL * 60;
+   int FILE_SIZE_1K;
+   
+   FILE_SIZE_1K = 2000;
+   return(FILE_SIZE_1K * SAMPLE_RATE * RECORD_INTERVAL * 60);
+
+
+}
+
+
+
+
+
+
+
+
+
+

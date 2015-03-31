@@ -1,0 +1,151 @@
+#define year_init 0x15                            // set year
+
+#define ALARM_REG_ADDR 0x0a                       // set register address
+#define SECOND_ALARM 0x80                         // set second ALARM disabled (bit 7 = 1 disable)
+#define MINUTE_ALARM1 0x2F                         // set minuite ALARM  
+#define MINUTE_ALARM0 0x80                         // set minuite ALARM  
+#define HOUR_ALARM 0x2F                            // set hour ALARM 
+#define day_ALARM 0x2F                             // set day ALARM 
+#define weekday_ALARM 0x85                         // set week day ALARM disabled (bit 7 = 1 disable)
+
+#define WATCHDOG_REG_ADDR 0x10                     // set register address
+#define WATCHDOG_ALARM_CFG 0x83                    // set WATCHDOG ALARM 10000011 --> 10(7,6)-watchdog enabled
+                                                   // 0(5) INT - permanent and not square wave, 000(4-2) unused.
+                                                   // 11 (1,0) - 1/60 Hz - 1 minute clk period
+#define WATCHDOG_ALARM_VAL 0x3                     // Value can be - 00-FF  
+
+#define TIMESTAMP_REG_ADDR 0x12                    // Timestamp register
+#define TIMESTAMP_CTRL 0x03
+
+
+#define CTRL_REG_ADDR 0x00
+#define CTRL_REG0_VAL 0x03
+#define CTRL_REG1_VAL 0x00
+#define CTRL_REG2_VAL 0x02                        // minute interrupt enabled.
+
+#define START_HOUR      A3              // 23 -> 1010 0011  Alarm Enable, dontcare, 2 BCD tens digit, 4BCD unit place
+#define START_DAY       A6              // 26 -> 1010 0110 Alarm Enable, dontcare, 2 BCD tens digit, 4BCD unit place
+#define WAKE_INTERVAL   3               // 3
+#define SLEEP_INTERVAL  2               // 2
+#define SAMPLE_RATE     48              // 48K
+#define RECORD_INTERVAL 30              // 30 minutes in one file
+#define FILE_SIZE_1K    2000            // 2000 bytes per second for 1k sampling rate
+
+
+
+#endif /* RTC_TEST_H_ */
+
+
+//This function sends necessary instruction to properly initialize Time_Date Regtister
+void  RTC_Initialize_Time_Date()
+{
+	TWI_Master_Initialise();
+		
+	unsigned char  TIME_DATE_INIT_VAL[9];
+	int total_secs, year_init, month_init, weekday_init, day_init, HOUR_init, MINUTE_init, SECOND_init;
+
+	total_secs = time();  			// Number of seconds since january 1st 1970.
+	total_secs = total_secs - 5902416000; // number of seconds from 1970 to 1915 1st January.
+	total_secs = total_secs - 5097600; 	// number of seconds from march 1, 2015 till now
+	day_init = (total_secs/86400);
+	total_secs = total_secs - 86400*day_init
+	HOUR_init = (total_secs/3600);
+	total_secs = total_secs - HOUR_init*3600;
+	MINUTE_init = (total_secs/60);
+	SECOND_init = total_secs - MINUTE_init*60;
+	month_init = 3;				   	// set month - March 2015
+	year_init = 2015;               		// set year                  
+
+	TIME_DATE_INIT_VAL[0]= I2C_ADDR_WR;			      // first Store the RTC write address
+	TIME_DATE_INIT_VAL[1]= DATE_TIME_REG_ADDR	      // set register address
+	TIME_DATE_INIT_VAL[2]= SECOND_init;             // set second 
+	TIME_DATE_INIT_VAL[3]= MINUTE_init;            // set minuite 
+	TIME_DATE_INIT_VAL[4]= HOUR_init;				   // set hour
+	TIME_DATE_INIT_VAL[5]= day_init;		            // set day
+	TIME_DATE_INIT_VAL[6]= weekday_init;				// set week day
+	TIME_DATE_INIT_VAL[7]= month_init;				   // set month
+	TIME_DATE_INIT_VAL[8]= year_init;               // set year
+	
+	TWI_Start_Transceiver_With_Data(TIME_DATE_INIT_VAL, 9);
+}
+
+// This function collects time stamps from the Time/Date registers.
+void  Collect_Time_Date()
+{
+		
+	unsigned char  TIME_DATE_RD_INIT[8];
+	
+	TIME_DATE_RD_INIT[0]= I2C_ADDR_RD;			// first Store the RTC write address
+	TIME_DATE_RD_INIT[1]= register_address;	// set register address
+	
+	TWI_Start_Transceiver_With_Data(TIME_DATE_RD_INIT, 2);
+
+	TWI_Get_Data_From_Transceiver(TIME_DATE_RD_VAL, 8);
+
+	SECOND_rd  = TIME_DATE_RD_VAL[0] ;              // set second 
+	MINUTE_rd = TIME_DATE_RD_VAL[1] ;             // set minuite 
+	HOUR_rd    = TIME_DATE_RD_VAL[2] ;				// set hour
+	day_rd     = TIME_DATE_RD_VAL[3] ;		            // set day
+	weekday_rd = TIME_DATE_RD_VAL[4] ;				// set week day
+	month_rd   = TIME_DATE_RD_VAL[5] ;				// set month
+	year_rd    = TIME_DATE_RD_VAL[6] ;                // set year
+}
+
+// This function sends necessary instruction to properly set ALARMs to the ALARM Regtisters.
+void  RTC_Set_ALARM_Registers(int day, int hour, int minute, int current_state)
+{
+	//TWI_Master_Initialise();
+		
+	unsigned char  ALARM_SET_VAL[7];
+	
+	ALARM_SET_VAL[0]= I2C_ADDR_WR;			      /	/ first Store the RTC write address
+	ALARM_SET_VAL[1]= ALARM_REG_ADDR;	         	// set register address
+	ALARM_SET_VAL[2]= SECOND_ALARM;              		// set second 
+	if(current_state)
+	{
+		ALARM_SET_VAL[3]= MINUTE_ALARM1 & minute;             		// set minuite alarm if it is for wake and timer record
+	}
+	else
+	{
+		ALARM_SET_VAL[3]= MINUTE_ALARM0 & minute;             		// disable minuite alarm if it is for sleep
+	}
+	ALARM_SET_VAL[4]= HOUR_ALARM & hour;				      // set hour
+	ALARM_SET_VAL[5]= day_ALARM & day;		            // set day
+	ALARM_SET_VAL[6]= weekday_ALARM;				   // set week day
+	
+	TWI_Start_Transceiver_With_Data(ALARM_SET_VAL, 7);
+}
+
+// This function sends necessary instruction to properly set ALARMs to the ALARM Regtisters.
+void  RTC_Set_WATCHDOG_Registers()
+{
+	//TWI_Master_Initialise();
+		
+	unsigned char  WATCHDOG_CFG_VAL[4];
+	
+	WATCHDOG_CFG_VAL[0]= I2C_ADDR_WR;			      // first Store the RTC write address
+	WATCHDOG_CFG_VAL[1]= WATCHDOG_REG_ADDR;	         // set register address
+	WATCHDOG_CFG_VAL[2]= WATCHDOG_ALARM_CFG;              // set second 
+	WATCHDOG_CFG_VAL[3]= WATCHDOG_ALARM_VAL;             // set minuite 
+	
+	TWI_Start_Transceiver_With_Data(WATCHDOG_CFG_VAL, 4);
+}
+
+// This function sends necessary instruction to properly set ALARMs to the ALARM Regtisters.
+void  RTC_Set_CTL_Registers()
+{
+	//TWI_Master_Initialise();
+		
+	unsigned char  CTL_REG_VAL[5];
+	
+	CTL_REG_VAL[0]= I2C_ADDR_WR;			       // first Store the RTC write address
+	CTL_REG_VAL[1]= WATCHDOG_REG_ADDR;	       // set register address
+	CTL_REG_VAL[2]= CTRL_REG0_VAL;             // set  
+	CTL_REG_VAL[3]= CTRL_REG1_VAL;             // set  
+	CTL_REG_VAL[4]= CTRL_REG2_VAL;             // set  
+	
+	TWI_Start_Transceiver_With_Data(CTL_REG_VAL, 5);
+}
+
+
+
