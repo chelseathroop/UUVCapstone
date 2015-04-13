@@ -1,0 +1,35 @@
+// Note ; all the numbers and values listed below are arbitrary, actual values will be calculated by pre-mission software 
+ 
+// the data array passed to MCU through ISP or USB interface likely has the same format as following:
+
+
+{n1,n2,n3,n4}
+ 
+{ {yy,MM,DD,HH,MI,FS},
+  {yy,MM,DD,HH,MI,FS},
+...
+}
+
+
+
+where 
+n1 : number of files will be recorded to SD card 1, 
+n2 :  number of files will be recorded to SD card 2
+n3 : number of files will be recorded to SD card 3
+n4 : number of files will be recorded to SD card 4
+yy for year ( only last 2 digits),MM : month, DD: day...FS: sample rate using 24 hour format. 
+Using 44 for 44.1K sample rate, 48 for 48K, 96 for 96K
+
+Example:
+
+
+{12,14,20,22};
+
+{
+{15,04,10,10,00,44},
+{15,04,10,15,30,44},
+{15,04,10,18,20,48},
+{15,04,10,22,45,48},
+....
+
+}
