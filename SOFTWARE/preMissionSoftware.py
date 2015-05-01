@@ -8,7 +8,6 @@ i = 3
 index = 0
 
 dataArray = []
-arrayOfArrays = []
 
 programGreet = Label(root, text = 'Welcome to the Acoustic Recording Device Center')
 programGreet.grid(row = 0, columnspan = 8)
@@ -48,7 +47,7 @@ def newLineEnter() :
     dataArray[(index + 5)].grid(row = (i-1), column = 7) 
 
     # Add to arrayOfArrays
-    arrayOfArrays.append()    
+       
 
 
 
@@ -107,8 +106,6 @@ dataArray.append(Entry(root, width = 10))
 dataArray[5].grid(row = 2, column = 7)
 
 # Create Array inside 
-arrayOfArrays.append(dataArray)
-
 
 
 # Save Parameter button
