@@ -4,10 +4,12 @@ from tkFileDialog import *
 
 root = Tk()
 
+
 i = 3
 index = 0
 
 dataArray = []
+arrayOfArrays = []
 
 programGreet = Label(root, text = 'Welcome to the Acoustic Recording Device Center')
 programGreet.grid(row = 0, columnspan = 8)
@@ -46,11 +48,9 @@ def newLineEnter() :
     dataArray.append(Entry(root, width = 10))           # Sample rate entry
     dataArray[(index + 5)].grid(row = (i-1), column = 7) 
 
-    # Add to arrayOfArrays
-       
-
-
-
+    # Create Array of Arrays
+    arrayOfArrays.append([dataArray[index-6].get(),dataArray[index-5].get(),dataArray[index-4].get(),dataArray[index-3].get(),dataArray[index-2].get(),dataArray[index-1].get()])
+    
     # Move buttons down
     saveParam.grid(row = (i+1), column = 5)
  
@@ -59,19 +59,21 @@ def newLineEnter() :
 def saveParameters() :
     dataFile =  asksaveasfile(initialfile = 'dataFile.txt', initialdir = 'chelseathroop/Documents/ECE/Capstone')
     
-    
-    
-    for x in range(2):
-        dataFile.write('{')
-        for k in range(3):
-            dataFile.write(dataArray[k].get()) 
+    arrayOfArrays.append([dataArray[index].get(),dataArray[index+1].get(),dataArray[index+2].get(),dataArray[index+3].get(),dataArray[index+4].get(),dataArray[index+5].get()])
+
+    dataFile.write('{ ')    
+    for array in arrayOfArrays:
+        for x in range(2):
+            dataFile.write('{')
+            for k in range(3):
+                dataFile.write(array[k]) 
+                dataFile.write(',')
+            dataFile.write(array[x+3])
             dataFile.write(',')
-        dataFile.write(dataArray[x+3].get())
-        dataFile.write(',')
-        dataFile.write(dataArray[k+3].get()) 
-        dataFile.write('},\n')
-    
-    
+            dataFile.write(array[k+3]) 
+            dataFile.write('}\n')
+    dataFile.write(' }')
+       
 
 
 
@@ -104,8 +106,6 @@ dataArray[4].grid(row = 3, column = 5)
 Label(root, text = "Sample Rate (kHz) : ").grid(row = 2, column = 6)
 dataArray.append(Entry(root, width = 10))
 dataArray[5].grid(row = 2, column = 7)
-
-# Create Array inside 
 
 
 # Save Parameter button
