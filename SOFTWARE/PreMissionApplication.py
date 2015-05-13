@@ -1,15 +1,19 @@
 
 from Tkinter import *
 from tkFileDialog import *
+
+
 i = 3              #  Set up variables for rows and indexing arrays of data
 index = 0
 dataArray = []
 arrayOfArrays = []
 
 
+
+
 class scheduleApp() :
-    def app(self) :
-        self.root = Tk()
+    def __init__(self) :
+        self.root = Tk() 
         programGreet = Label(self.root, text = 'Welcome to the Acoustic Recording Device Center')
         programGreet.grid(row = 0, columnspan = 9)
         self.createEntryLine()        
@@ -19,8 +23,8 @@ class scheduleApp() :
 
     # Define callback for entering new line of data   
     def createEntryLine(self) :
-    
         
+               
         def newLineEnter() :
             global i
             i = i + 2
@@ -31,7 +35,7 @@ class scheduleApp() :
     
             Label(self.root, text = "Date (YYMMDD) : ").grid(row = (i-1), column = 0)
   
-            dataArray.append(Entry(self.root, width = 5))            # Year entry
+            dataArray.append(Entry(self.root, width = 5, validate = 'focusout', validatecommand = yearvcmd, invalidcommand = yearinval))            # Year entry
             dataArray[index].grid(row = (i-1), column = 1) 
             dataArray.append(Entry(self.root, width = 5))            # Month entry
             dataArray[index+1].grid(row = (i-1), column = 2)    
@@ -86,7 +90,7 @@ class scheduleApp() :
                     dataFile.write(array[time+1])
                     dataFile.write(',')
                     dataFile.write(array[k+5]) 
-                    dataFile.write('}\n')
+                    dataFile.write('},\n')
                     time = time +2
             dataFile.write(' }')
 
@@ -95,7 +99,9 @@ class scheduleApp() :
 
         # Prompt user for first date
         Label(self.root, text = "Date (YYMMDD) : ").grid(row = 2, column = 0)
-        dataArray.append(Entry(self.root, width = 5))
+        yearvcmd = (self.root.register(self.validateYear), '%P')
+        yearinval = (self.root.register(self.invalidYear), '%P')
+        dataArray.append(Entry(self.root, width = 5, validate = 'focusout', validatecommand = yearvcmd, invalidcommand = yearinval))
         dataArray[0].grid(row = 2, column = 1) 
   
         dataArray.append(Entry(self.root, width = 5))
@@ -138,10 +144,20 @@ class scheduleApp() :
         newLine.grid(row = (i+1), column = 8)
 
 
+    def validateYear(self,P):
+       
+        # Invalid year if over 2 numbers lone
+        dataArray[index].config(fg = 'black')
+        return (len(P) == 2 and P.isdigit())
+
+    def invalidYear(self, P):
+        # Create Error message for invalid year
+        dataArray[index].delete(0,END)
+        dataArray[index].config(fg = 'red')
+        dataArray[index].insert(0,'invalid')
+        
+app = scheduleApp()
 
 
-if __name__ == '__main__':
-    sa = scheduleApp()
-    sa.app()
 
 
