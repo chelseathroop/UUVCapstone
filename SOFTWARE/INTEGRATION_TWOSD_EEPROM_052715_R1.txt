@@ -1,0 +1,1219 @@
+/*
+ * Integration_library_052115_R1.c
+ *
+ * Created: 4/28/2015 7:47:16 PM
+ *  Author: FEDOR NGUYEN
+ */ 
+
+//-----------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GLOBAL DEFINES
+#define F_CPU 16000000UL // run CPU at 16 MHz
+#define LED 5 // Boarduino LED on PB5
+#define ClearBit(x,y) x &= ~_BV(y) // equivalent to cbi(x,y)
+#define SetBit(x,y) x |= _BV(y) // equivalent to sbi(x,y)
+
+#define NUM_EXECUTIONS_ADDRESS 0x00 // define the address for writing and reading  the data in/ from
+#define NUM_FILE_ADDRESS 0x01 // define the address for writing and reading  the data in/ from
+
+
+// ---------------------------------------------------------------------------
+// INCLUDES
+#include <avr/io.h> // deal with port registers
+#include <util/delay.h> // used for _delay_ms function
+#include <string.h> // string manipulation routines
+#include <stdlib.h>
+#include <math.h>
+#include <stdio.h>
+#include <avr/interrupt.h>
+#include <avr/power.h>
+#include <avr/sleep.h>
+#include <stdint.h>
+#include <avr/eeprom.h>
+
+#include <UUV.h>
+// ---------------------------------------------------------------------------
+// TYPEDEFS
+typedef uint8_t byte; // I just like byte & sbyte better
+typedef int8_t sbyte;
+// ---------------------------------------------------------------------------
+// MISC ROUTINES
+void InitAVR()
+{
+	DDRB = 0x3F; // 0011.1111; set B0-B5 as outputs
+	//DDRC = 0x00; // 0000.0000; set PORTC as inputs
+	
+}
+void msDelay(int delay) // put into a routine
+{ // to remove code inlining
+	for (int i=0;i<delay;i++) // at cost of timing accuracy
+	_delay_ms(1);
+}
+void FlashLED()
+{
+	SetBit(PORTB,LED);
+	msDelay(250);
+	ClearBit(PORTB,LED);
+	msDelay(250);
+}
+// ---------------------------------------------------------------------------
+// HD44780-LCD DRIVER ROUTINES
+//
+// Routines:
+// LCD_Init initializes the LCD controller
+// LCD_Cmd sends LCD controller command
+// LCD_Char sends single ascii character to display
+// LCD_Clear clears the LCD display & homes cursor
+// LCD_Home homes the LCD cursor
+// LCD_Goto puts cursor at position (x,y)
+// LCD_Line puts cursor at start of line (x)
+// LCD_Hex displays a hexadecimal value
+// LCD_Integer displays an integer value
+// LCD_String displays a string
+//
+// The LCD module requires 6 I/O pins: 2 control lines & 4 data lines.
+// PortB is used for data communications with the HD44780-controlled LCD.
+// The following defines specify which port pins connect to the controller:
+#define LCD_RS 0 // pin for LCD R/S (eg PB0)
+#define LCD_E 1 // pin for LCD enable
+#define DAT4 2 // pin for d4
+#define DAT5 3 // pin for d5
+#define DAT6 4 // pin for d6
+#define DAT7 5 // pin for d7
+// The following defines are HD44780 controller commands
+#define CLEARDISPLAY 0x01
+#define SETCURSOR 0x80
+void PulseEnableLine ()
+{
+	SetBit(PORTB,LCD_E); // take LCD enable line high
+	_delay_us(80); // wait 40 microseconds
+	ClearBit(PORTB,LCD_E); // take LCD enable line low
+}
+void SendNibble(byte data)
+{
+	PORTB &= 0xC3; // 1100.0011 = clear 4 data lines
+	if (data & _BV(4)) SetBit(PORTB,DAT4);
+	if (data & _BV(5)) SetBit(PORTB,DAT5);
+	if (data & _BV(6)) SetBit(PORTB,DAT6);
+	if (data & _BV(7)) SetBit(PORTB,DAT7);
+	PulseEnableLine(); // clock 4 bits into controller
+}
+void SendByte (unsigned char data)
+{
+	SendNibble(data); // send upper 4 bits
+	SendNibble(data<<4); // send lower 4 bits
+	ClearBit(PORTB,5); // turn off boarduino LED
+}
+void LCD_Cmd (byte cmd)
+{
+	ClearBit(PORTB,LCD_RS); // R/S line 0 = command data
+	SendByte(cmd); // send it
+}
+void LCD_Char (byte ch)
+{
+	SetBit(PORTB,LCD_RS); // R/S line 1 = character data
+	SendByte(ch); // send it
+}
+void LCD_Init()
+{
+	LCD_Cmd(0x33); // initialize controller
+	LCD_Cmd(0x32); // set to 4-bit input mode
+	LCD_Cmd(0x28); // 2 line, 5x7 matrix
+	LCD_Cmd(0x0C); // turn cursor off (0x0E to enable)
+	LCD_Cmd(0x06); // cursor direction = right
+	LCD_Cmd(0x01); // start with clear display
+	msDelay(3); // wait for LCD to initialize
+}
+void LCD_Clear() // clear the LCD display
+{
+	LCD_Cmd(CLEARDISPLAY);
+	msDelay(10); // wait for LCD to process command 3
+}
+void LCD_Home() // home LCD cursor (without clearing)
+{
+	LCD_Cmd(SETCURSOR);
+}
+void LCD_Goto(byte x, byte y) // put LCD cursor on specified line
+{
+	byte addr = 0; // line 0 begins at addr 0x00
+	switch (y)
+	{
+		case 1: addr = 0x40; break; // line 1 begins at addr 0x40
+		case 2: addr = 0x14; break;
+		case 3: addr = 0x54; break;
+	}
+	LCD_Cmd(SETCURSOR+addr+x); // update cursor with x,y position
+}
+void LCD_Line(byte row) // put cursor on specified line
+{
+	LCD_Goto(0,row);
+}
+void LCD_String(const char *text) // display string on LCD
+{
+	while (*text) // do until /0 character
+	LCD_Char(*text++); // send char & update char pointer
+}
+void LCD_Hex(int data)
+// displays the hex value of DATA at current LCD cursor position
+{
+	char st[8] = ""; // save enough space for result
+	itoa(data,st,16); // convert to ascii hex
+	//LCD_Message("0x"); // add prefix "0x" if desired
+	LCD_String(st); // display it on LCD
+}
+void LCD_Integer(int data)
+// displays the integer value of DATA at current LCD cursor position
+{
+	char st[8] = ""; // save enough space for result
+	itoa(data,st,10); // convert to ascii
+	LCD_String(st); // display in on LCD
+}
+// ---------------------------------------------------------------------------
+// I2C (TWI) ROUTINES
+//
+// On the AVRmega series, PA4 is the data line (SDA) and PA5 is the clock (SCL
+// The standard clock rate is 100 KHz, and set by I2C_Init. 
+//--------------------------------------------------------------------------
+#define F_SCL 100000UL // I2C clock speed 100 KHz
+#define READ 1
+#define TW_START 0xA4 // send start condition (TWINT,TWSTA,TWEN)
+#define TW_STOP 0x94 // send stop condition (TWINT,TWSTO,TWEN)
+#define TW_ACK 0xC4 // return ACK to slave
+#define TW_NACK 0x84 // don't return ACK to slave
+#define TW_SEND 0x84 // send data (TWINT,TWEN)
+#define TW_READY (TWCR & 0x80) // ready when TWINT returns to logic 1.
+#define TW_STATUS (TWSR & 0xF8) // returns value of status register
+//#define I2C_Stop() TWCR = TW_STOP // inline macro for stop condition
+void I2C_Init()
+// at 16 MHz, the SCL frequency will be 16/(16+2(TWBR)), assuming prescalar of 0.
+// so for 100KHz SCL, TWBR = ((F_CPU/F_SCL)-16)/2 = ((16/0.1)-16)/2 = 144/2 = 72.
+{
+	TWSR = 0x00; // set prescalar to zero
+	TWBR = ((F_CPU/F_SCL)-16)/2; // set SCL frequency in TWI bit register used 16
+}
+byte I2C_Detect(byte addr)
+// look for device at specified address; return 1=found, 0=not found
+{
+	TWCR = TW_START; // send start condition
+	while (!TW_READY); // wait
+	TWDR = addr; // load device's bus address
+	TWCR = TW_SEND; // and send it
+	while (!TW_READY); // wait
+	return (TW_STATUS==0x18); // return 1 if found; 0 otherwise
+}
+byte I2C_FindDevice(byte start)
+// returns with address of first device found; 0=not found
+{
+	for (byte addr=start;addr<0xFF;addr++) // search all 256 addresses
+	{
+		if (I2C_Detect(addr)) // I2C detected?
+		return addr; // leave as soon as one is found
+	}
+	return 0; // none detected, so return 0.
+}
+
+void  I2C_Start (byte slaveAddr)
+
+{
+	
+	I2C_Detect(slaveAddr);
+	
+} /* I2C_start*/
+
+void I2C_Rep_Start (byte slaveAddr)
+
+{
+return I2C_Start(slaveAddr);	
+}
+
+
+void I2C_STOP(void)
+{
+	/*send stop condition*/
+	TWCR=(1<<TWINT)|(1<<TWEN)|(1<<TWSTO);
+	//wait until stop conditin is executed and bus released
+	while(TWCR&(1<<TWSTO));
+} /*I2C_STOP*/
+byte I2C_Write (byte data) // sends a data byte to slave
+{
+	TWDR = data; // load data to be sent
+	TWCR = TW_SEND; // and send it
+	while (!TW_READY); // wait
+	return (TW_STATUS!=0x28);
+}
+byte I2C_ReadACK () // reads a data byte from slave
+{
+	TWCR = TW_ACK; // ack = will read more data
+	while (!TW_READY); // wait
+	return TWDR;
+	//return (TW_STATUS!=0x28);
+}
+byte I2C_ReadNACK () // reads a data byte from slave
+{
+	TWCR = TW_NACK; // nack = not reading more data
+	while (!TW_READY); // wait
+	return TWDR;
+	//return (TW_STATUS!=0x28);
+}
+void I2C_WriteByte(byte busAddr, byte data)
+{
+	I2C_Start(busAddr); // send bus address
+	I2C_Write(data); // then send the data byte
+	I2C_STOP();
+}
+void I2C_WriteRegister(byte busAddr, byte deviceRegister, byte data)
+{
+	I2C_Start(busAddr); // send bus address
+	I2C_Write(deviceRegister); // first byte = device register address
+	I2C_Write(data); // second byte = data for device register
+	I2C_STOP();
+}
+byte I2C_ReadRegister(byte busAddr, byte deviceRegister)
+{
+	byte data = 0;
+	I2C_Start(busAddr); // send device address
+	I2C_Write(deviceRegister); // set register pointer
+	I2C_Start(busAddr+READ); // restart as a read operation
+	data = I2C_ReadNACK(); // read the register data
+	I2C_STOP(); // stop
+	return data;
+}
+// ---------------------------------------------------------------------------
+// PCF2127 RTC ROUTINES
+#define PCF2127 0xA2 // I2C bus address of PCF2127 RTC
+#define SECONDS_REGISTER 0x03
+#define MINUTES_REGISTER 0x04
+#define HOURS_REGISTER 0x05
+#define DAYS_REGISTER 0x06
+#define DAYOFWK_REGISTER 0x07
+#define MONTHS_REGISTER 0x08
+#define YEARS_REGISTER 0x09
+#define CONTROL_REGISTER 0x00
+#define RAM_BEGIN 0x08
+#define RAM_END 0x3F
+#define sec 0x00
+#define min 0x40
+#define hour 0x15
+#define day 0x09
+#define weekday 0x06
+#define month 0x05
+#define year 0x15
+
+#define ALARM_REG 0x0A
+/*
+byte alarm_dhms[][6] ={
+	{0x09,0x15,0x41,0x00,44,0},
+	{0x09,0x15,0x43,0x00,44,1},
+	{0x09,0x15,0x45,0x00,44,0},
+	{0x09,0x15,0x47,0x00,48,1},
+	{0x09,0x15,0x49,0x00,44,0},
+	{0x09,0x15,0x51,0x00,96,1},
+	{0x09,0x15,0x53,0x00,44,0},
+	{0x09,0x15,0x57,0x00,48,1},
+	{0x09,0x15,0x59,0x00,44,0},
+	{0x09,0x16,0x01,0x00,44,1},
+	{0x09,0x16,0x03,0x00,44,0},
+	{0x09,0x16,0x05,0x00,96,1},
+	{0x09,0x16,0x09,0x00,44,0},
+	{0x09,0x16,0x11,0x00,44,1},
+	{0x09,0x16,0x13,0x00,44,0},
+	{0x09,0x16,0x17,0x00,96,1},
+	{0x09,0x16,0x22,0x00,44,0},
+	{0x09,0x16,0x25,0x00,48,1},
+	{0x09,0x16,0x28,0x00,44,0},
+	{0x09,0x16,0x30,0x00,44,1},
+	{0x09,0x18,0x00,0x00,44,0},
+	{0x09,0x18,0x05,0x00,44,1},
+	{0x09,0x18,0x45,0x00,44,0},
+	{0x09,0x19,0x00,0x00,48,1},
+	{0x09,0x21,0x41,0x00,44,0},
+	{0x09,0x22,0x41,0x00,96,1},
+	{0x09,0x23,0x45,0x00,44,0},
+	{0x10,0x00,0x05,0x00,44,1},
+	{0x10,0x01,0x00,0x00,44,0},
+	{0x10,0x05,0x00,0x00,48,1},
+	{0x10,0x05,0x30,0x00,44,0},
+	{0x10,0x06,0x00,0x00,96,1},
+	{0x10,0x09,0x00,0x00,44,0},
+	{0x10,0x10,0x15,0x00,44,1},
+	{0x10,0x12,0x00,0x00,44,0},
+};
+*/
+
+void PCF2127_GetTime( byte *seconds, byte *minutes,byte *hours , byte *days, byte *dayofws, byte *months, byte *years )// 
+// returns hours, minutes, and seconds in BCD format
+{
+
+	I2C_Start(PCF2127);
+	I2C_Write(SECONDS_REGISTER);
+	I2C_STOP();
+	I2C_Rep_Start(PCF2127+0x01);
+	
+	*seconds=I2C_ReadACK();
+	*minutes=I2C_ReadACK();
+	*hours=I2C_ReadACK();
+	*days=I2C_ReadACK();
+	*dayofws=I2C_ReadACK();
+	*months=I2C_ReadACK();
+	*years=I2C_ReadNACK();
+
+	I2C_STOP();
+	
+}
+
+void PCF2127_GetTimeAlarm( byte *s, byte *m,byte *h , byte *d)//, byte *dayofws, byte *months, byte *years )//
+// returns hours, minutes, and seconds in BCD format
+{
+
+	I2C_Start(PCF2127);
+	I2C_Write(ALARM_REG);
+	I2C_STOP();
+	I2C_Rep_Start(PCF2127+0x01);
+	
+	*s=I2C_ReadACK();
+	*m=I2C_ReadACK();
+	*h=I2C_ReadACK();
+	*d=I2C_ReadNACK();
+	
+	I2C_STOP();
+	
+}
+
+
+void StartCounter()
+{
+	//I2C_WriteRegister(0xA2,0x01,0x00); //Clear the alarm and interrupt
+	I2C_WriteRegister(0xA2,0x00,0x00); // set control_register 1 
+	I2C_WriteRegister(0xA2,0x01,0x12); //Activate the alarm and interrupt
+	I2C_WriteRegister(0xA2,0x03,0x7F); // activate the OS
+	I2C_WriteRegister(0xA2,0x0A,0x80); // activate the 
+	I2C_WriteRegister(0xA2,0x0B,0x00); // activate the minute alarm
+	I2C_WriteRegister(0xA2,0x0C,0x00); // activate the hour alarm
+	I2C_WriteRegister(0xA2,0x0D,0x00); // activate the day alarm
+}
+
+void SetTimeDate() //sec, min, hour,  day,  weekday,  month,  year
+// set the date and time.
+{
+	//I2C_WriteRegister(PCF2127,SECONDS_REGISTER, 0x00);
+	I2C_Start(0xA2);
+	I2C_Write(0x03); //second register
+	_delay_ms(5);
+	//	I2C_Start(0x03);
+	
+	I2C_Write(sec);//second 00
+	I2C_Write(min);//minute 59
+	I2C_Write(hour);//hour 23
+	I2C_Write(day);//day 31
+	I2C_Write(weekday);//day of week 00
+	
+	I2C_Write(month);//month 05
+	
+	I2C_Write(year);//year 15
+	
+	
+	I2C_STOP();
+	
+	
+}
+
+
+void SetTimeDateAlarm(byte alarms,byte alarmm,byte alarmh, byte alarmd) //sec, min, hour,  day,  weekday,  month,  year // alarm_smhd[0][0],alarm_smhd[0][1],alarm_smhd[0][2],alarm_smhd[0][3]
+// set the date and time.
+{
+	//I2C_WriteRegister(PCF2127,SECONDS_REGISTER, 0x00);
+	I2C_Start(0xA2);
+	I2C_Write(0x0A); //second register
+	_delay_ms(5);
+	//	I2C_Start(0x03);
+	
+	I2C_Write(alarms);//second 00 alarm_smhd[0][0]
+	I2C_Write(alarmm);//minute 59alarm_smhd[0][1]
+	I2C_Write(alarmh);//hour 23alarm_smhd[0][2]
+	I2C_Write(alarmd);//day 31alarm_smhd[0][3]
+	
+	//I2C_Write(alrweekday);//day of week 00
+	
+	//I2C_Write(month);//month 05
+	
+	//I2C_Write(year);//year 15
+	
+	
+	I2C_STOP();
+	
+	
+}
+
+
+
+// ---------------------------------------------------------------------------
+// APPLICATION ROUTINES
+void ShowDevices()
+// Scan I2C addresses and display addresses of all devices found
+{
+	LCD_Line(1); LCD_String("Found:");
+	byte addr = 1;
+	while (addr>0)
+	{
+		LCD_Char(' ');
+		addr = I2C_FindDevice(addr);
+		if (addr>0) LCD_Hex(addr++);
+	}
+}
+void LCD_TwoDigits(byte data)
+// helper function for WriteDate()
+// input is two digits in BCD format
+// output is to LCD display at current cursor position
+{
+	byte temp = data>>4;
+	LCD_Char(temp+'0');
+	data &= 0x0F;
+	LCD_Char(data+'0');
+}
+
+char dec2bcd(char num)
+{
+	return ((num/10 * 16) + (num % 10));
+}
+// Convert Binary Coded Decimal (BCD) to Decimal
+char bcd2dec(char num)
+{
+	return ((num/16 * 10) + (num % 16));
+}
+
+void WriteTime()
+{
+	byte hours, minutes, seconds; 
+	byte days, dayofws,months,years;
+	byte s,m,h,d;
+	
+	PCF2127_GetTime(&seconds,&minutes,&hours,&days,&dayofws,&months,&years );//
+	PCF2127_GetTimeAlarm( &s,&m,&h,&d);
+	
+	
+	LCD_Line(0);
+	LCD_String("CLOCK: ");
+	LCD_TwoDigits(hours);
+	LCD_Char(':');
+	LCD_TwoDigits(minutes);
+	LCD_Char(':');
+	LCD_TwoDigits(seconds);
+	
+	
+		
+		LCD_Line(1);
+		LCD_String("ALARM: ");
+		LCD_TwoDigits(h);
+		LCD_Char(':');
+		LCD_TwoDigits(m);
+		LCD_Char(':');
+		LCD_TwoDigits(s);
+		
+	
+}
+void LCD_TimeDate()
+{
+	//LCD_Line(0); 
+	WriteTime();
+	//LCD_Line(1); WriteDate();
+}
+// ---------------------------------------------------------------------------
+// PROGRAM LOOP
+void MainLoop()
+{
+//	while(1)
+	for(int f=0;f<5;f++)
+	{
+		LCD_TimeDate(); // put time & date on LCD
+		_delay_ms(50);
+		EICRA |= (1<<ISC01);
+		EIMSK |= (1<<INT1);
+		EIFR |= (1<<INTF1);
+		sei();
+	}
+}
+
+//////////////////////////////
+// All for button service AND Mux
+
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdlib.h>
+#include <avr/interrupt.h>
+#include <math.h>
+#include <avr/eeprom.h>
+
+
+
+//int const CD1=12; // already specified in UUV.h
+//int const CD2=13;
+//int const CD3=10;
+//int const CD4=15;
+
+#define NUM_EXECUTIONS_ADDRESS 0x00 // define the address for writing and reading  the data in/ from
+
+uint16_t num_executions;
+int num_file;
+
+int const k =6;
+
+
+int i, j, l ;
+
+
+
+//#define Menu1_port				PORTD                  // Menu button
+//#define Menu1_bit				PORTD0
+//#define Menu1_ddr				DDRD
+
+
+//#define FastForward2_port		PORTD                   // Fast Forward button
+//#define FastForward2_bit		PORTD1
+//#define FastForward2_ddr		DDRD
+
+#define Minus_port				PORTD                   // Minus button
+#define Minus_bit				PORTD2
+#define Minus_ddr				DDRD
+
+#define FastForward4_port		PORTD                   // Fast Forward button repeated press
+#define FastForward4_bit		PORTD4
+#define FastForward4_ddr		DDRD
+
+#define Down_port				PORTD                   // Down button
+#define Down_bit				PORTD5
+#define Down_ddr				DDRD
+
+#define Middle_port				PORTD                   // Middle button
+#define Middle_bit				PORTD6
+#define Middle_ddr				DDRD
+
+
+#define Up_port					PORTD                     // Up button
+#define Up_bit					PORTD7
+#define Up_ddr					DDRD
+
+
+#define Menu8_port				PORTC                   // Menu button repeated press in service sequence
+#define Menu8_bit				PORTC0
+#define Menu8_ddr				DDRC
+
+
+#define Record_port				PORTC	                   // Record button press
+#define Record_bit				PORTC2
+#define Record_ddr				DDRC
+
+
+#define Stop_port				PORTC                   // Stop button press
+#define Stop_bit				PORTC3
+#define Stop_ddr				DDRC
+
+//// All for MUX
+
+#define Control_port			PORTC                   // Menu button repeated press in service sequence
+#define Control_bit				PORTC1				// MAde it for MUX OE now
+#define Control_ddr				DDRC
+
+//#define OE1_port				PORTB	                  // Mux control line 1
+//#define OE1_bit					PORTB1
+//#define OE1_ddr					DDRB
+
+#define OE1_port				PORTD	                  // Mux control line 1
+#define OE1_bit					PORTD1
+#define OE1_ddr					DDRD
+
+
+#define OE2_port				PORTD                   // Mux control line 2
+#define OE2_bit					PORTD0
+#define OE2_ddr					DDRD
+
+
+
+// Function Prototypes
+void sample_rate_44();
+void sample_rate_48();
+void sample_rate_96();
+void sample_rate();
+
+
+
+
+////////////////////////////////
+
+
+
+// ---------------------------------------------------------------------------
+// MAIN PROGRAM
+//int i;
+int main(void)
+{
+	
+	// Define the button service GPIO
+	
+	
+	//Menu1_ddr &=~(1<<Menu1_bit); //PD0
+	//FastForward2_ddr &=~(1<<FastForward2_bit); //DP1
+	Minus_ddr &=~(1<<Minus_bit); //PD2
+	FastForward4_ddr &=~(1<<FastForward4_bit); //PD4
+	Down_ddr&=~(1<<Down_bit); //PD5
+	Middle_ddr|=(1<<Middle_bit); //PD76
+	Up_ddr&=~(1<<Up_bit); //PD7
+	Menu8_ddr&=~(1<<Menu8_bit); //PC0
+	Control_ddr|=(1<<Control_bit); //PC1
+	
+	// Record
+	Record_ddr&=~(1<<Record_bit);
+	
+	
+	// End ofDefine the button service GPIO
+	
+	
+	//pull up resistor for TWI
+	DDRC&=~(1<<DDC4);
+	PORTC|=(1<<PORTC4);
+	
+	DDRC&=~(1<<DDC5);
+	PORTC|=(1<<PORTC5);
+	
+	
+	// SET INTERRUPT PIN
+	DDRD&=~(1<<DDD3);
+	PORTD|=(1<<PORTD3);
+	
+	// Initialize the MUX
+	
+	OE1_ddr|=(1<<OE1_bit); // OE1 high
+	OE1_port|=(1<<OE1_bit);
+	//PORTB&=~(1<<OE1_bit) ;
+	
+	OE2_ddr|=(1<<OE2_bit); //OE2 high
+	OE2_port|=(1<<OE2_bit);
+	
+	//PORTB&=~(1<<OE2_bit);
+
+
+	Control_ddr|=(1<<Control_bit); // Control bit low
+	Control_port&=~(1<<Control_bit);
+
+	_delay_ms(50);
+	
+	
+	//OE1_ddr|=(1<<OE1_bit); // OE1 high
+	//OE1_port&=~(1<<OE1_bit);
+
+	_delay_ms(100);
+	
+	//num_file=1;
+	//num_executions=0;
+	//eeprom_write_word((uint16_t*)NUM_FILE_ADDRESS,num_file);
+	
+	//eeprom_write_word((uint16_t*)NUM_EXECUTIONS_ADDRESS,num_executions);
+	
+	uint16_t num_executions = eeprom_read_word((uint16_t*)NUM_EXECUTIONS_ADDRESS);
+	if (num_executions==0xFFFF) num_executions=0;
+	i=num_executions;
+	
+	////int num_file = eeprom_read_word((uint16_t*)NUM_FILE_ADDRESS);
+	//if (num_file==0xFFFF) num_file=0;//i=num_executions;
+	//l=num_file;
+	//i=0;
+	 
+	// DDRC|=(1<<PORTC3);
+	 
+	InitAVR(); // set port direction
+	LCD_Init(); // initialize HD44780 LCD controller
+	I2C_Init(); // set I2C clock frequency
+	I2C_WriteRegister(0xA2,0x01,0x00); //Clear the alarm and interrupt
+	StartCounter();
+	LCD_Clear();
+	LCD_String("Ready.");
+	ShowDevices(); // show that I2C is working OK
+	SetTimeDate(); // set the date and time
+	//SetTimeDateAlarm(alarm_dhms[0][3],alarm_dhms[0][2],alarm_dhms[0][1],alarm_dhms[0][0]);	// set alarm tiem and day
+	SetTimeDateAlarm(alarm_dhms[i][3],alarm_dhms[i][2],alarm_dhms[i][1],alarm_dhms[i][0]);	// set alarm tiem and day
+
+	msDelay(100);
+	LCD_Clear();
+	
+	 
+	 for(int j=0;j<4;j++)
+	 {
+		 
+		 PORTD|=(1<<PORTD6)	;
+		 _delay_ms(50);
+		 PORTD&=~(1<<PORTD6);
+		 _delay_ms(20);
+		 
+	 }
+	
+	
+	//EICRA &= ~(1<<ISC01); 
+	//SMCR &= ~(1<<SE); //disable sleep mode
+	//EIFR |= (1<<INTF1);
+	
+	EICRA |= (1<<ISC01);
+	     
+	EIMSK |= (1<<INT1);  
+	EIFR |= (1<<INTF1);             
+	sei();   
+	
+	          
+	MainLoop(); // display starting time 
+	while(1)
+	//for(int j=0;j<20;j++)
+	{
+		SMCR |= (1<<SE);
+		//cli();
+		SMCR &= ~(1<<SM2) ;
+		SMCR|= (1<<SM1) ;
+		SMCR&=~ (1<<SM0);
+	
+	power_all_disable();
+	SMCR &= ~(1<<SE);
+	}
+	 
+	for(int j=0;j<4;j++)
+	{
+		
+		
+		PORTD|=(1<<PORTD6)	;
+		_delay_ms(50);
+		PORTD&=~(1<<PORTD6);
+		_delay_ms(20);
+		
+	}
+ // MainLoop(); // display time
+ 	
+	
+}
+
+ISR(INT1_vect)
+
+{
+		
+	power_all_enable() ;
+	
+	uint16_t num_executions = eeprom_read_word((uint16_t*)NUM_EXECUTIONS_ADDRESS);
+	if (num_executions==0xFFFF) num_executions=0;
+	
+	//int num_file = eeprom_read_word((uint16_t*)NUM_FILE_ADDRESS);
+	//if (num_file==0xFFFF) num_file=0;
+	//l=num_file;
+	
+	num_executions++;
+	i= num_executions;
+
+	
+	
+	eeprom_write_word((uint16_t*)NUM_EXECUTIONS_ADDRESS,num_executions);
+	
+	
+	for(int j=0;j<6;j++)
+	{
+		
+		PORTD|=(1<<PORTD6)	;
+		_delay_ms(50);
+		PORTD&=~(1<<PORTD6);
+		_delay_ms(10);
+		
+	}
+	// Pull up OE1/2 
+	
+	
+	_delay_ms(100);
+	
+	
+	
+	I2C_WriteRegister(0xA2,0x01,0x00);
+	_delay_ms(50);
+	EICRA |= (1<<ISC01);
+	EIMSK |= (1<<INT1);
+	EIFR |= (1<<INTF1);
+	sei();
+	
+	//EICRA |= (1<<ISC01);
+	I2C_WriteRegister(0xA2,0x01,0x12);
+		 
+	
+	//for(int i=1;i<10; i++)
+	if(i<200)
+	{
+		
+		SetTimeDateAlarm(alarm_dhms[i][3],alarm_dhms[i][2],alarm_dhms[i][1],alarm_dhms[i][0]);	// set alarm tiem and day
+		
+	}
+	else {SetTimeDateAlarm(alarm_dhms[4][3],alarm_dhms[4][2],alarm_dhms[4][1],alarm_dhms[4][0]);}
+		
+	//if (i%2==0)
+	
+	//i=i-1;
+	
+	if (i<10)
+			{
+		
+				OE1_ddr|=(1<<OE1_bit); // OE1 Low
+				OE1_port&=~(1<<OE1_bit);
+				//PORTB&=~(1<<OE1_bit) ;
+		
+				OE2_ddr|=(1<<OE2_bit); //OE2 high
+				OE2_port|=(1<<OE2_bit);
+		
+				//PORTB&=~(1<<OE2_bit);
+
+				Control_ddr|=(1<<Control_bit); // Control bit high
+					Control_port|=(1<<Control_bit);
+					
+					
+			}
+			else
+			{
+				
+				OE1_ddr|=(1<<OE1_bit); // OE1 Low
+				OE1_port&=~(1<<OE1_bit);
+				//PORTB&=~(1<<OE1_bit) ;
+				
+				OE2_ddr|=(1<<OE2_bit); //OE2 high
+				OE2_port|=(1<<OE2_bit);
+				
+				//PORTB&=~(1<<OE2_bit);
+
+				Control_ddr|=(1<<Control_bit); // Control bit high
+			
+				Control_port&=~(1<<Control_bit);
+
+
+			}
+			
+	if(alarm_dhms[i-1][5]==1)
+	{
+		
+		//num_file ++;
+		//eeprom_write_word((uint16_t*)NUM_FILE_ADDRESS,num_file);
+		//for(int j=0;j<5;j++)
+		{
+		
+		
+			PORTD|=(1<<PORTD6)	;
+			_delay_ms(10);
+			PORTD&=~(1<<PORTD6);
+			_delay_ms(10);
+		
+		}
+		MainLoop(); // just to check the clock and alarm setting
+		
+	// if Flag=Wake -> set samprate then start recording
+	EICRA |= (1<<ISC01);
+	I2C_WriteRegister(0xA2,0x01,0x12);
+	if(alarm_dhms[i-1][4]==44)
+	{sample_rate_44();}
+		else
+		{
+			if(alarm_dhms[i-1][4]==48)
+			{sample_rate_48();}
+				else
+				{ sample_rate_96();}
+		}
+	}
+		else
+	{
+		
+		for(int j=0;j<10;j++)
+		{
+		
+			PORTD|=(1<<PORTD6)	;
+			_delay_ms(30);
+			PORTD&=~(1<<PORTD6);
+			_delay_ms(10);
+		
+		}
+		
+		PORTD|=(1<<PORTD6)	;
+		//i++;
+	MainLoop(); // just to check the clock and alarm setting
+	
+		
+
+		//Stop recording, turn off TASCAM
+		Stop_ddr|=(1<<Stop_bit); // set Stop_bit to output
+		PORTC|=(1<<Stop_bit); // out put 1 for Stop_bit
+		_delay_ms(50);
+		PORTC&=~(1<<Stop_bit);
+
+		_delay_ms(50);
+
+
+		//Stop recording, turn off TASCAM
+		Stop_ddr|=(1<<Stop_bit); // set Stop_bit to output
+	Stop_port|=(1<<Stop_bit); // out put 1 for Stop_bit
+		_delay_ms(500);//500
+	Stop_port&=~(1<<Stop_bit);
+	
+	//Pull up OE1/2 and Control S
+	OE1_ddr|=(1<<OE1_bit); // OE1 high
+	OE1_port|=(1<<OE1_bit);
+	//PORTB&=~(1<<OE1_bit) ;
+
+	OE2_ddr|=(1<<OE2_bit); //OE2 high
+	OE2_port|=(1<<OE2_bit);
+
+	//PORTB&=~(1<<OE2_bit);
+
+	Control_ddr|=(1<<Control_bit); // Control bit low
+	Control_port&=~(1<<Control_bit);
+
+	
+	EICRA |= (1<<ISC01);
+	EIMSK |= (1<<INT1);
+	EIFR |= (1<<INTF1);
+	sei();
+	
+		while(1)
+		{
+			SMCR |= (1<<SE);
+			//cli();
+			SMCR &= ~(1<<SM2) ;
+			SMCR|= (1<<SM1) ;
+			SMCR&=~ (1<<SM0);
+		
+			power_all_disable();
+			SMCR &= ~(1<<SE);
+		}
+
+	}
+	
+	EICRA |= (1<<ISC01);
+	I2C_WriteRegister(0xA2,0x01,0x12);
+	MainLoop(); // just to check the clock and alarm setting
+	
+	
+	}
+	
+	
+		
+	
+void sample_rate()
+{
+
+
+
+
+/*
+ OE1_ddr|=(1<<OE1_bit); // OE1 Low
+OE1_port&=~(1<<OE1_bit);
+ //PORTB&=~(1<<OE1_bit) ;
+ 
+ OE2_ddr|=(1<<OE2_bit); //OE2 high
+OE2_port|=(1<<OE2_bit);
+ 
+ //PORTB&=~(1<<OE2_bit);
+
+ Control_ddr|=(1<<Control_bit); // Control bit high
+Control_port&=~(1<<Control_bit);
+*/
+
+// turn on Tascam
+Stop_ddr|=(1<<Stop_bit); // set Stop_bit to output
+PORTC|=(1<<Stop_bit); // out put 1 for Stop_bit
+_delay_ms(500); //500
+PORTC&=~(1<<Stop_bit);
+
+//Setting the sample frequency and start recording
+
+_delay_ms(100); //500
+
+PORTD&=~(1<<Minus_bit);
+Minus_ddr|=(1<<Minus_bit);
+_delay_ms(100);
+Minus_ddr&=~(1<<Minus_bit);
+
+_delay_ms(50);
+
+	PORTD&=~(1<<FastForward4_bit);
+	FastForward4_ddr|=(1<<FastForward4_bit);
+	_delay_ms(100);
+	FastForward4_ddr&=~(1<<FastForward4_bit);
+
+
+_delay_ms(50);
+
+PORTD&=~(1<<Down_bit);
+Down_ddr|=(1<<Down_bit);
+_delay_ms(5);
+Down_ddr&=~(1<<Down_bit);
+	
+	_delay_ms(50);
+
+	PORTD&=~(1<<FastForward4_bit);
+	FastForward4_ddr|=(1<<FastForward4_bit);
+	_delay_ms(100);
+	FastForward4_ddr&=~(1<<FastForward4_bit);
+	
+	// make sure to stay at 44KHz
+	
+	PORTD&=~(1<<Down_bit);
+	Down_ddr|=(1<<Down_bit);
+	_delay_ms(10);
+	Down_ddr&=~(1<<Down_bit);
+	
+	_delay_ms(50);
+
+	PORTD&=~(1<<Down_bit);
+	Down_ddr|=(1<<Down_bit);
+	_delay_ms(10);
+	Down_ddr&=~(1<<Down_bit);
+
+	_delay_ms(50);
+
+	PORTD&=~(1<<Down_bit);
+	Down_ddr|=(1<<Down_bit);
+	_delay_ms(10);
+	Down_ddr&=~(1<<Down_bit);
+	
+
+
+}
+
+void sample_rate_44()
+
+{
+sample_rate();
+
+_delay_ms(50);
+
+PORTD&=~(1<<Minus_bit);
+Minus_ddr|=(1<<Minus_bit);
+_delay_ms(200);
+Minus_ddr&=~(1<<Minus_bit);
+
+_delay_ms(100);
+
+PORTD&=~(1<<Minus_bit);
+Minus_ddr|=(1<<Minus_bit);
+_delay_ms(200);
+Minus_ddr&=~(1<<Minus_bit);
+
+// Start recording with sample rate =44.1K for 15 second
+
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+_delay_ms(100);
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+MainLoop(); // just to check the clock and alarm setting
+EICRA |= (1<<ISC01);
+EIMSK |= (1<<INT1);
+EIFR |= (1<<INTF1);
+sei();
+
+}
+
+void sample_rate_48()
+
+{
+sample_rate();
+
+Up_port&=~ (1<<Up_bit);
+Up_ddr=(1<<Up_bit);
+_delay_ms(5);
+Up_ddr&=~(1<<Up_bit);
+
+_delay_ms(50);
+
+
+
+PORTD&=~(1<<Minus_bit);
+Minus_ddr|=(1<<Minus_bit);
+_delay_ms(200);
+Minus_ddr&=~(1<<Minus_bit);
+
+_delay_ms(300);
+
+PORTD&=~(1<<Minus_bit);
+Minus_ddr|=(1<<Minus_bit);
+_delay_ms(200);
+Minus_ddr&=~(1<<Minus_bit);
+
+// Start recording with sample rate =44.1K for 15 second
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+_delay_ms(100);
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+MainLoop(); // just to check the clock and alarm setting
+EICRA |= (1<<ISC01);
+EIMSK |= (1<<INT1);
+EIFR |= (1<<INTF1);
+sei();
+
+}
+
+void sample_rate_96()
+
+{
+	sample_rate();	
+	Up_port&=~ (1<<Up_bit);
+	Up_ddr=(1<<Up_bit);
+	_delay_ms(10);
+	Up_ddr&=~(1<<Up_bit);
+	
+	_delay_ms(50);
+	
+	Up_port&=~ (1<<Up_bit);
+	Up_ddr=(1<<Up_bit);
+	_delay_ms(100);
+	Up_ddr&=~(1<<Up_bit);
+
+	_delay_ms(50);
+
+
+
+	PORTD&=~(1<<Minus_bit);
+	Minus_ddr|=(1<<Minus_bit);
+	_delay_ms(200);
+	Minus_ddr&=~(1<<Minus_bit);
+
+	_delay_ms(300);
+
+	PORTD&=~(1<<Minus_bit);
+	Minus_ddr|=(1<<Minus_bit);
+	_delay_ms(200);
+	Minus_ddr&=~(1<<Minus_bit);
+
+	// Start recording with sample rate =44.1K for 15 second
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+_delay_ms(100);
+
+PORTC&=~(1<<Record_bit);
+Record_ddr|=(1<<Record_bit);
+_delay_ms(200);
+Record_ddr&=~(1<<Record_bit);
+
+	MainLoop(); // just to check the clock and alarm setting
+	EICRA |= (1<<ISC01);
+	EIMSK |= (1<<INT1);
+	EIFR |= (1<<INTF1);
+	sei();
+
+}
