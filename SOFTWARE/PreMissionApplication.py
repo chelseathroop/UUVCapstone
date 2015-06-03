@@ -21,7 +21,7 @@ class scheduleApp() :
     # Create initial application and call functions
     def __init__(self) :
         self.root = Tk() 
-        programGreet = Label(self.root, text = 'Welcome to the Acoustic Recording Device Center')
+        programGreet = Label(self.root, text = 'Welcome to the Acoustic Recording Device Center', fg = 'blue', font = ('Times New Roman',16))
         programGreet.grid(row = 0, columnspan = 9)
         self.createEntryLine()        
         self.root.title('UUV Acoustic Recording Schedule')
@@ -96,7 +96,12 @@ class scheduleApp() :
             global SD3
             global SD4
             timeSec = 3600*time 
-            totalFileSize = totalFileSize + (timeSec*float(dataArray[index-1].get())*16*1000)
+            if dataArray[index-1] == 96:
+                bits = 24
+            else:
+                bits = 16
+            totalFileSize = totalFileSize + ((timeSec*float(dataArray[index-1].get())*bits*2000)/8)
+            print (totalFileSize/1000000000)
             if totalFileSize < 32000000000:
                 SD1 = SD1 +1
             elif totalFileSize > 32000000000 and totalFileSize < 64000000000:
@@ -127,26 +132,29 @@ class scheduleApp() :
         def saveParameters() :
             dataFile =  asksaveasfile(initialfile = 'dataFile.txt', initialdir = '/Users/chelseathroop/Documents/ECE/Capstone')
             
-            # Add last line of data to array of data arrays 
-            arrayOfArrays.append([dataArray[index].get(),dataArray[index+1].get(),dataArray[index+2].get(),dataArray[index+3].get(),dataArray[index+4].get(),dataArray[index+5].get(),dataArray[index+6].get(),dataArray[index+7].get()])
-  
-            dataFile.write('{ ')    
+           
+            # Write all data to text file 
+            dataFile.write('//TYPEDEFS\ntypedef uint8_t byte;\ntypedef int8_t sbyte;\n\n')
+            dataFile.write('byte alarm_dhms[][6] = { \n')    
             for array in arrayOfArrays:
                 time = 3
                 for x in range(2):
                     dataFile.write('{')
-                    for k in range(3):
-                        dataFile.write('0x')
-                        dataFile.write(array[k]) 
-                        dataFile.write(',')
+                    
+                    dataFile.write('0x')
+                    dataFile.write(array[2]) 
+                    dataFile.write(',')
                     dataFile.write('0x')
                     dataFile.write(array[time])
                     dataFile.write(',')
                     dataFile.write('0x')
                     dataFile.write(array[time+1])
+                    dataFile.write(',') 
+                    dataFile.write('0x00')
                     dataFile.write(',')
-                    dataFile.write('0x')
-                    dataFile.write(array[k+5]) 
+                    dataFile.write(array[7]) 
+                    dataFile.write(',')
+                    dataFile.write(str(x))
                     dataFile.write('},\n')
                     time = time +2
             dataFile.write(' }\n')
@@ -235,7 +243,7 @@ class scheduleApp() :
 
         # Enter new line of paramters
  
-        newLine = Button(self.root, text = 'Enter New Line', command = newLineEnter)
+        newLine = Button(self.root, text = 'Enter Data', command = newLineEnter)
         newLine.grid(row = (i+1), column = 8)
 
 
