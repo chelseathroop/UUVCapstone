@@ -127,11 +127,12 @@ class scheduleApp() :
 
 
 
-
+#############################################################################################################################################
         # Define call back for saving paramters and writing them to the output file
+        # SET THIS TO DESIRED FILE PATH AND FILE NAME #
         def saveParameters() :
             dataFile =  asksaveasfile(initialfile = 'dataFile.txt', initialdir = '/Users/chelseathroop/Documents/ECE/Capstone')
-            
+##############################################################################################################################################            
            
             # Write all data to text file 
             dataFile.write('//TYPEDEFS\ntypedef uint8_t byte;\ntypedef int8_t sbyte;\n\n')
